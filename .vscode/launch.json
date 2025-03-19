@@ -1,0 +1,37 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+  /*    {
+        "name": "Next.js: Debug in Chrome",
+        "type": "chrome",
+        "request": "launch",
+        "url": "http://localhost:3000",
+        "webRoot": "${workspaceFolder}",
+        "sourceMaps": true,
+        "trace": true
+      },
+      {
+        "name": "Next.js: Debug Server",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder}/node_modules/next/dist/bin/next",
+        "args": ["dev"],
+        "cwd": "${workspaceFolder}",
+        "sourceMaps": true,
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen"
+      },*/
+      {
+        "name": "Next.js: Full stack",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run dev",
+        "serverReadyAction": {
+          "pattern": "- Local:.+(https?://.+)",
+          "uriFormat": "%s",
+          "action": "openExternally"
+        }
+      }
+    ]
+  }
+  
