@@ -1,10 +1,9 @@
 import { getServerSession } from "next-auth";
 import SignInButton from "@/components/SignInButton";
 import PollList from "@/components/PollList";
-import { authOptions } from "./api/auth/[...nextauth]/route";
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession();
 
   return (
     <main className="min-h-screen p-8">
