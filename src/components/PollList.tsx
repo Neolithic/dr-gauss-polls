@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { getPolls, getVotesForMatch, getUserVoteForMatch, submitVote } from '@/app/actions';
+import { getPolls, getAllVotes, submitVote } from '@/app/actions';
 
 interface Poll {
   Match_ID: string;
@@ -24,47 +24,30 @@ export default function PollList() {
   const [userVotes, setUserVotes] = useState<{ [matchId: string]: string }>({});
   const [voting, setVoting] = useState<{ [matchId: string]: boolean }>({});
 
+  const fetchData = async () => {
+    try {
+      const [pollsData, votesData] = await Promise.all([
+        getPolls(),
+        getAllVotes()
+      ]);
+      
+      setPolls(pollsData);
+      setVoteCounts(votesData.voteCounts);
+      setUserVotes(votesData.userVotes);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchPolls = async () => {
-      try {
-        const data = await getPolls();
-        setPolls(data);
-        // Fetch votes for each poll
-        data.forEach((poll: Poll) => {
-          fetchVotes(poll.Match_ID);
-          if (session?.user?.email) {
-            fetchUserVote(poll.Match_ID);
-          }
-        });
-      } catch (error) {
-        console.error('Error fetching polls:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPolls();
+    if (session) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
   }, [session]);
-
-  const fetchUserVote = async (matchId: string) => {
-    try {
-      const data = await getUserVoteForMatch(matchId);
-      if (data?.option_voted) {
-        setUserVotes(prev => ({ ...prev, [matchId]: data.option_voted }));
-      }
-    } catch (error) {
-      console.error('Error fetching user vote:', error);
-    }
-  };
-
-  const fetchVotes = async (matchId: string) => {
-    try {
-      const data = await getVotesForMatch(matchId);
-      setVoteCounts(prev => ({ ...prev, [matchId]: data }));
-    } catch (error) {
-      console.error('Error fetching votes:', error);
-    }
-  };
 
   const handleVote = async (matchId: string, team: string) => {
     if (!session?.user?.email) return;
@@ -72,8 +55,7 @@ export default function PollList() {
     setVoting(prev => ({ ...prev, [matchId]: true }));
     try {
       await submitVote(matchId, team);
-      setUserVotes(prev => ({ ...prev, [matchId]: team }));
-      await fetchVotes(matchId);
+      await fetchData(); // Refresh all data after voting
     } catch (error: any) {
       console.error('Error voting:', error);
       alert(error.message || 'Failed to vote');

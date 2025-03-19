@@ -14,7 +14,7 @@ export async function getPolls() {
   return data;
 }
 
-export async function getVotesForMatch(matchId: string) {
+export async function getAllVotes() {
   const session = await getServerSession();
 
   if (!session) {
@@ -23,74 +23,62 @@ export async function getVotesForMatch(matchId: string) {
 
   const supabase = await getSupabaseClient();
 
-  // Get the poll close time
-  const { data: matchData, error: matchError } = await supabase
+  // First get all matches with their close times
+  const { data: matches, error: matchError } = await supabase
     .from('MATCHES')
-    .select('Poll_Close_Time')
-    .eq('Match_ID', matchId)
-    .single();
+    .select('Match_ID, Poll_Close_Time');
 
   if (matchError) throw matchError;
 
-  // Get the latest vote for each user before poll close time
+  // Create a map of match IDs to close times
+  const closeTimeMap = matches.reduce((acc: { [key: string]: string }, match) => {
+    acc[match.Match_ID] = match.Poll_Close_Time;
+    return acc;
+  }, {});
+
+  // Get all votes
   const { data: votes, error } = await supabase
     .from('VOTES')
-    .select('user_email, option_voted, created_timestamp')
-    .eq('match_id', matchId)
+    .select('match_id, user_email, option_voted, created_timestamp')
     .eq('poll_type', 'winner')
-    .lte('created_timestamp', matchData.Poll_Close_Time)
     .order('created_timestamp', { ascending: false });
 
   if (error) throw error;
 
-  // Get only the latest vote for each user
-  const latestVotes = votes.reduce((acc: { [email: string]: string }, vote) => {
-    if (!acc[vote.user_email]) {
-      acc[vote.user_email] = vote.option_voted;
+  // Process votes for each match
+  const voteCounts: { [matchId: string]: { [team: string]: number } } = {};
+  const userVotes: { [matchId: string]: string } = {};
+
+  votes.forEach(vote => {
+    const matchCloseTime = closeTimeMap[vote.match_id];
+    if (!matchCloseTime || vote.created_timestamp > matchCloseTime) return;
+
+    // For vote counts, only count the latest vote from each user
+    if (!voteCounts[vote.match_id]) {
+      voteCounts[vote.match_id] = {};
     }
-    return acc;
-  }, {});
+    
+    // If we haven't recorded this user's vote for this match yet
+    if (!userVotes[`${vote.match_id}-${vote.user_email}`]) {
+      userVotes[`${vote.match_id}-${vote.user_email}`] = vote.option_voted;
+      voteCounts[vote.match_id][vote.option_voted] = (voteCounts[vote.match_id][vote.option_voted] || 0) + 1;
+    }
 
-  // Count votes for each team
-  const voteCounts = Object.values(latestVotes).reduce((acc: { [key: string]: number }, team) => {
-    acc[team] = (acc[team] || 0) + 1;
-    return acc;
-  }, {});
+    // Record the user's own latest vote if it's their email
+    if (session.user?.email === vote.user_email && !userVotes[vote.match_id]) {
+      userVotes[vote.match_id] = vote.option_voted;
+    }
+  });
 
-  return voteCounts;
-}
-
-export async function getUserVoteForMatch(matchId: string) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
-    throw new Error('Unauthorized');
-  }
-
-  const supabase = await getSupabaseClient();
-
-  // Get the poll close time
-  const { data: matchData, error: matchError } = await supabase
-    .from('MATCHES')
-    .select('Poll_Close_Time')
-    .eq('Match_ID', matchId)
-    .single();
-
-  if (matchError) throw matchError;
-
-  // Get user's latest vote before poll close time
-  const { data: votes, error } = await supabase
-    .from('VOTES')
-    .select('option_voted, created_timestamp')
-    .eq('match_id', matchId)
-    .eq('user_email', session.user.email)
-    .eq('poll_type', 'winner')
-    .lte('created_timestamp', matchData.Poll_Close_Time)
-    .order('created_timestamp', { ascending: false })
-    .limit(1);
-
-  if (error) throw error;
-  return votes[0] || null;
+  return {
+    voteCounts,
+    userVotes: Object.entries(userVotes)
+      .filter(([key]) => !key.includes('-')) // Only keep the user's own votes
+      .reduce((acc: { [key: string]: string }, [matchId, team]) => {
+        acc[matchId] = team;
+        return acc;
+      }, {})
+  };
 }
 
 export async function submitVote(matchId: string, teamVoted: string) {
