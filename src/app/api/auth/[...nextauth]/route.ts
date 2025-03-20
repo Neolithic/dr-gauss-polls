@@ -8,6 +8,11 @@ import type { JWT } from 'next-auth/jwt';
 declare module 'next-auth' {
   interface Session {
     accessToken?: string;
+    user: {
+      email?: string | null;
+      name?: string | null;
+      image?: string | null;
+    };
   }
 }
 
@@ -25,8 +30,14 @@ const authOptions: NextAuthOptions = {
       }
       return token;
     },
-    async session({ session, token }: { session: any; token: JWT }) {
+    async session({ session, token, user }: { session: any; token: JWT; user: any }) {
       session.accessToken = token.accessToken;
+      session.user = {
+        ...session.user,
+        name: token.name,
+        email: token.email,
+        image: token.picture
+      };
       return session;
     },
     async signIn({ user, account, profile }) {

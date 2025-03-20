@@ -16,13 +16,28 @@ interface VoteCounts {
   [team: string]: number;
 }
 
+interface Voter {
+  name: string;
+  email: string;
+}
+
+interface VotesByTeam {
+  [team: string]: Voter[];
+}
+
+interface VotersByMatch {
+  [matchId: string]: VotesByTeam;
+}
+
 export default function PollList() {
   const { data: session } = useSession();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [voteCounts, setVoteCounts] = useState<{ [matchId: string]: VoteCounts }>({});
   const [userVotes, setUserVotes] = useState<{ [matchId: string]: string }>({});
+  const [votersByMatch, setVotersByMatch] = useState<VotersByMatch>({});
   const [voting, setVoting] = useState<{ [matchId: string]: boolean }>({});
+  const [expandedTeams, setExpandedTeams] = useState<{ [key: string]: boolean }>({});
 
   const fetchData = async () => {
     try {
@@ -34,6 +49,7 @@ export default function PollList() {
       setPolls(pollsData);
       setVoteCounts(votesData.voteCounts);
       setUserVotes(votesData.userVotes);
+      setVotersByMatch(votesData.votersByMatch);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -52,16 +68,57 @@ export default function PollList() {
   const handleVote = async (matchId: string, team: string) => {
     if (!session?.user?.email) return;
     
+    if (userVotes[matchId] === team) {
+      alert(`You have already voted for ${team}`);
+      return;
+    }
+    
     setVoting(prev => ({ ...prev, [matchId]: true }));
     try {
       await submitVote(matchId, team);
-      await fetchData(); // Refresh all data after voting
+      await fetchData();
     } catch (error: any) {
       console.error('Error voting:', error);
       alert(error.message || 'Failed to vote');
     } finally {
       setVoting(prev => ({ ...prev, [matchId]: false }));
     }
+  };
+
+  const toggleVoterList = (matchId: string, team: string) => {
+    const key = `${matchId}-${team}`;
+    setExpandedTeams(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const renderVoterList = (matchId: string, team: string) => {
+    const voters = votersByMatch[matchId]?.[team] || [];
+    const key = `${matchId}-${team}`;
+    const isExpanded = expandedTeams[key];
+
+    if (voters.length === 0) return null;
+
+    return (
+      <div className="mt-2">
+        <button
+          onClick={() => toggleVoterList(matchId, team)}
+          className="text-sm text-blue-600 hover:text-blue-800"
+        >
+          {isExpanded ? 'Hide voters' : 'Show voters'}
+        </button>
+        {isExpanded && (
+          <ul className="mt-1 text-sm text-gray-600 space-y-1">
+            {voters.map((voter, index) => (
+              <li key={index}>
+                {voter.name || voter.email}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
   };
 
   const isPollActive = (closeTime: string) => {
@@ -114,34 +171,40 @@ export default function PollList() {
             {isActive ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={() => handleVote(poll.Match_ID, poll.Team_1)}
-                    disabled={isVoting}
-                    className={`p-4 text-center border rounded-lg transition-colors ${
-                      userVote === poll.Team_1
-                        ? 'bg-green-50 border-green-500'
-                        : 'hover:bg-blue-50'
-                    }`}
-                  >
-                    {poll.Team_1} will win
-                    <div className="text-sm text-gray-600 mt-1">
-                      {calculatePercentage(team1Votes, totalVotes)}%
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => handleVote(poll.Match_ID, poll.Team_2)}
-                    disabled={isVoting}
-                    className={`p-4 text-center border rounded-lg transition-colors ${
-                      userVote === poll.Team_2
-                        ? 'bg-green-50 border-green-500'
-                        : 'hover:bg-blue-50'
-                    }`}
-                  >
-                    {poll.Team_2} will win
-                    <div className="text-sm text-gray-600 mt-1">
-                      {calculatePercentage(team2Votes, totalVotes)}%
-                    </div>
-                  </button>
+                  <div>
+                    <button
+                      onClick={() => handleVote(poll.Match_ID, poll.Team_1)}
+                      disabled={isVoting}
+                      className={`w-full p-4 text-center border rounded-lg transition-colors ${
+                        userVote === poll.Team_1
+                          ? 'bg-green-50 border-green-500'
+                          : 'hover:bg-blue-50'
+                      }`}
+                    >
+                      {poll.Team_1} will win
+                      <div className="text-sm text-gray-600 mt-1">
+                        {calculatePercentage(team1Votes, totalVotes)}%
+                      </div>
+                    </button>
+                    {renderVoterList(poll.Match_ID, poll.Team_1)}
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => handleVote(poll.Match_ID, poll.Team_2)}
+                      disabled={isVoting}
+                      className={`w-full p-4 text-center border rounded-lg transition-colors ${
+                        userVote === poll.Team_2
+                          ? 'bg-green-50 border-green-500'
+                          : 'hover:bg-blue-50'
+                      }`}
+                    >
+                      {poll.Team_2} will win
+                      <div className="text-sm text-gray-600 mt-1">
+                        {calculatePercentage(team2Votes, totalVotes)}%
+                      </div>
+                    </button>
+                    {renderVoterList(poll.Match_ID, poll.Team_2)}
+                  </div>
                 </div>
                 {userVote && (
                   <p className="text-center text-green-600">
