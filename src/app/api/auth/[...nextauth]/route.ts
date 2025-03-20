@@ -16,6 +16,15 @@ declare module 'next-auth' {
   }
 }
 
+const getAllowedEmails = () => {
+  const emailsString = process.env.ALLOWED_EMAILS;
+  if (!emailsString) {
+    console.warn('ALLOWED_EMAILS environment variable is not set');
+    return new Set<string>();
+  }
+  return new Set(emailsString.split(',').map(email => email.trim().toLowerCase()));
+};
+
 const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -42,13 +51,35 @@ const authOptions: NextAuthOptions = {
     },
     async signIn({ user, account, profile }) {
       try {
-        console.log('Sign in attempt:', { user, account, profile });
+        if (!user.email) {
+          console.error('No email provided by user');
+          return false;
+        }
+
+        const allowedEmails = getAllowedEmails();
+        
+        if (allowedEmails.size === 0) {
+          console.error('No allowed emails configured');
+          return false;
+        }
+
+        const isAllowed = allowedEmails.has(user.email.toLowerCase());
+        
+        if (!isAllowed) {
+          console.log(`Access denied for email: ${user.email}`);
+          return false;
+        }
+
+        console.log(`Access granted for email: ${user.email}`);
         return true;
       } catch (error) {
         console.error('Error in signIn callback:', error);
         return false;
       }
     },
+  },
+  pages: {
+    error: '/auth/error',
   },
   debug: true,
 };
