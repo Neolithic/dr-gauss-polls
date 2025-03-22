@@ -50,6 +50,7 @@ export default function PollList() {
   const [hiddenVoterLists, setHiddenVoterLists] = useState<{ [key: string]: boolean }>({});
   const [marginOptions, setMarginOptions] = useState<MarginOptions | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [nextPollClose, setNextPollClose] = useState<Date | null>(null);
 
   const fetchData = async () => {
     try {
@@ -64,6 +65,14 @@ export default function PollList() {
       setUserVotes(votesData.userVotes);
       setVotersByMatch(votesData.votersByMatch);
       setMarginOptions(marginOpts);
+
+      // Find the next poll to close
+      const now = new Date();
+      const nextClose = pollsData
+        .map(poll => new Date(poll.Poll_Close_Time))
+        .filter(date => date > now)
+        .sort((a, b) => a.getTime() - b.getTime())[0] || null;
+      setNextPollClose(nextClose);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -71,6 +80,7 @@ export default function PollList() {
     }
   };
 
+  // Effect for initial data fetch
   useEffect(() => {
     if (session) {
       setLoading(true);
@@ -79,6 +89,28 @@ export default function PollList() {
       setLoading(false);
     }
   }, [session]);
+
+  // Effect for poll close monitoring
+  useEffect(() => {
+    if (!nextPollClose || !session) return;
+
+    const now = new Date();
+    const timeUntilClose = nextPollClose.getTime() - now.getTime();
+    
+    if (timeUntilClose <= 0) {
+      // If we're past the close time, refresh immediately
+      fetchData();
+      return;
+    }
+
+    // Set up the timer for the next poll close
+    const timerId = setTimeout(() => {
+      fetchData();
+    }, timeUntilClose + 1000); // Add 1 second buffer
+
+    // Clean up timer on unmount or when nextPollClose changes
+    return () => clearTimeout(timerId);
+  }, [nextPollClose, session]);
 
   const handleVote = async (matchId: string, option: string, pollType: PollType) => {
     if (!session?.user?.email) return;
