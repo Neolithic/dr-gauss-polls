@@ -37,6 +37,8 @@ interface UserVotes {
 
 type MarginOptions = Awaited<ReturnType<typeof getMarginOptions>>;
 
+type TabType = 'active' | 'completed';
+
 export default function PollList() {
   const { data: session } = useSession();
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -45,8 +47,9 @@ export default function PollList() {
   const [userVotes, setUserVotes] = useState<{ [matchId: string]: UserVotes }>({});
   const [votersByMatch, setVotersByMatch] = useState<VotersByMatch>({});
   const [voting, setVoting] = useState<{ [key: string]: boolean }>({});
-  const [expandedTeams, setExpandedTeams] = useState<{ [key: string]: boolean }>({});
+  const [hiddenVoterLists, setHiddenVoterLists] = useState<{ [key: string]: boolean }>({});
   const [marginOptions, setMarginOptions] = useState<MarginOptions | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('active');
 
   const fetchData = async () => {
     try {
@@ -70,6 +73,7 @@ export default function PollList() {
 
   useEffect(() => {
     if (session) {
+      setLoading(true);
       fetchData();
     } else {
       setLoading(false);
@@ -99,7 +103,7 @@ export default function PollList() {
 
   const toggleVoterList = (matchId: string, pollType: string, option: string) => {
     const key = `${matchId}-${pollType}-${option}`;
-    setExpandedTeams(prev => ({
+    setHiddenVoterLists(prev => ({
       ...prev,
       [key]: !prev[key]
     }));
@@ -108,20 +112,14 @@ export default function PollList() {
   const renderVoterList = (matchId: string, pollType: string, option: string) => {
     const voters = votersByMatch[matchId]?.[pollType]?.[option] || [];
     const key = `${matchId}-${pollType}-${option}`;
-    const isExpanded = expandedTeams[key];
+    const isHidden = hiddenVoterLists[key];
 
     if (voters.length === 0) return null;
 
     return (
       <div className="mt-2">
-        <button
-          onClick={() => toggleVoterList(matchId, pollType, option)}
-          className="text-sm text-blue-600 hover:text-blue-800"
-        >
-          {isExpanded ? 'Hide voters' : 'Show voters'}
-        </button>
-        {isExpanded && (
-          <ul className="mt-1 text-sm text-gray-600 space-y-1">
+        {!isHidden && (
+          <ul className="mb-1 text-sm text-gray-600 space-y-1">
             {voters.map((voter, index) => (
               <li key={index}>
                 {voter.name || voter.email}
@@ -129,6 +127,12 @@ export default function PollList() {
             ))}
           </ul>
         )}
+        <button
+          onClick={() => toggleVoterList(matchId, pollType, option)}
+          className="text-sm text-blue-600 hover:text-blue-800"
+        >
+          {isHidden ? 'Show voters' : 'Hide voters'} ({voters.length})
+        </button>
       </div>
     );
   };
@@ -239,6 +243,54 @@ export default function PollList() {
     return Math.round((votes / total) * 100);
   };
 
+  const renderTabs = () => {
+    const activePollsCount = polls.filter(poll => isPollActive(poll.Poll_Close_Time)).length;
+    const completedPollsCount = polls.length - activePollsCount;
+
+    return (
+      <div className="mb-8">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+            <button
+              onClick={() => setActiveTab('active')}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'active'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              Active Polls
+              <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                activeTab === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {activePollsCount}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('completed')}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'completed'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              Completed Polls
+              <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                activeTab === 'completed' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {completedPollsCount}
+              </span>
+            </button>
+          </nav>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading matches...</div>;
   }
@@ -247,41 +299,49 @@ export default function PollList() {
     return <div className="text-center py-8">No upcoming matches available.</div>;
   }
 
-  return (
-    <div className="space-y-8">
-      {polls.map((poll) => {
-        const isActive = isPollActive(poll.Poll_Close_Time);
-        const matchDate = new Date(poll.Date).toLocaleDateString('en-US', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
-        const closeTime = new Date(poll.Poll_Close_Time).toLocaleString('en-US', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        });
+  const filteredPolls = polls.filter(poll => {
+    const isActive = isPollActive(poll.Poll_Close_Time);
+    return activeTab === 'active' ? isActive : !isActive;
+  });
 
-        return (
-          <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
-            <div className="mb-6">
-              <h3 className="text-xl font-semibold mb-2">{poll.Team_1} vs {poll.Team_2}</h3>
-              <p className="text-gray-600">Match Date: {matchDate}</p>
-              <p className="text-gray-600">Poll Closes: {closeTime}</p>
-            </div>
-            {isActive ? (
-              <div className="space-y-8">
-                {renderWinnerPoll(poll, isActive)}
-                {renderMarginPoll(poll, isActive)}
-              </div>
-            ) : (
-              <div className="text-center p-4 bg-gray-50 rounded-lg text-gray-500">
-                Poll closed
-              </div>
-            )}
+  return (
+    <div>
+      {renderTabs()}
+      <div className="space-y-8">
+        {filteredPolls.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            No {activeTab === 'active' ? 'active' : 'completed'} polls available
           </div>
-        );
-      })}
+        ) : (
+          filteredPolls.map((poll) => {
+            const isActive = isPollActive(poll.Poll_Close_Time);
+            const matchDate = new Date(poll.Date).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            });
+            const closeTime = new Date(poll.Poll_Close_Time).toLocaleString('en-US', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            });
+
+            return (
+              <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold mb-2">{poll.Team_1} vs {poll.Team_2}</h3>
+                  <p className="text-gray-600">Match Date: {matchDate}</p>
+                  <p className="text-gray-600">Poll {isActive ? 'Closes' : 'Closed'}: {closeTime}</p>
+                </div>
+                <div className="space-y-8">
+                  {renderWinnerPoll(poll, isActive)}
+                  {renderMarginPoll(poll, isActive)}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 } 
