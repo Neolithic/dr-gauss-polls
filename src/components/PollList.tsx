@@ -347,7 +347,7 @@ export default function PollList() {
         ) : (
           filteredPolls.map((poll) => {
             const isActive = isPollActive(poll.Poll_Close_Time);
-            const matchDate = new Date(poll.Date).toLocaleDateString('en-US', {
+            const matchDate = new Date(poll.Date + 'T00:00:00').toLocaleDateString('en-US', {
               weekday: 'long',
               year: 'numeric',
               month: 'long',
@@ -361,7 +361,7 @@ export default function PollList() {
             return (
               <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
                 <div className="mb-6">
-                  <h3 className="text-xl font-semibold mb-2">{poll.Team_1} vs {poll.Team_2}</h3>
+                  <h3 className="text-xl font-semibold mb-2">Match {poll.Match_ID}: {poll.Team_1} vs {poll.Team_2}</h3>
                   <p className="text-gray-600">Match Date: {matchDate}</p>
                   <p className="text-gray-600">Poll {isActive ? 'Closes' : 'Closed'}: {closeTime}</p>
                 </div>
