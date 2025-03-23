@@ -48,6 +48,11 @@ interface UserVotes {
   };
 }
 
+interface AIVote {
+  match_id: string;
+  reasoning: string;
+}
+
 export async function getAllVotes() {
   const session = await getServerSession();
 
@@ -185,4 +190,19 @@ export async function submitVote(matchId: string, option: string, pollType: Poll
 
   if (voteError) throw voteError;
   return true;
+}
+
+export async function getAIVotes(): Promise<{ [matchId: string]: string }> {
+  const supabase = await getSupabaseClient();
+
+  const { data: aiVotes, error } = await supabase
+    .from('AI_VOTES')
+    .select('match_id, reasoning');
+
+  if (error) throw error;
+
+  return (aiVotes as AIVote[]).reduce((acc, vote) => {
+    acc[vote.match_id] = vote.reasoning;
+    return acc;
+  }, {} as { [matchId: string]: string });
 } 

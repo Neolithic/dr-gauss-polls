@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { getPolls, getAllVotes, submitVote, getMarginOptions, type PollType } from '@/app/actions';
+import { getPolls, getAllVotes, submitVote, getMarginOptions, getAIVotes, type PollType } from '@/app/actions';
 
 interface Poll {
   Match_ID: string;
@@ -51,13 +51,16 @@ export default function PollList() {
   const [marginOptions, setMarginOptions] = useState<MarginOptions | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [nextPollClose, setNextPollClose] = useState<Date | null>(null);
+  const [aiPerspectives, setAIPerspectives] = useState<{ [matchId: string]: string }>({});
+  const [expandedPerspectives, setExpandedPerspectives] = useState<{ [key: string]: boolean }>({});
 
   const fetchData = async () => {
     try {
-      const [pollsData, votesData, marginOpts] = await Promise.all([
+      const [pollsData, votesData, marginOpts, aiVotes] = await Promise.all([
         getPolls(),
         getAllVotes(),
-        getMarginOptions()
+        getMarginOptions(),
+        getAIVotes()
       ]);
       
       setPolls(pollsData);
@@ -65,6 +68,7 @@ export default function PollList() {
       setUserVotes(votesData.userVotes);
       setVotersByMatch(votesData.votersByMatch);
       setMarginOptions(marginOpts);
+      setAIPerspectives(aiVotes);
 
       // Find the next poll to close
       const now = new Date();
@@ -323,6 +327,44 @@ export default function PollList() {
     );
   };
 
+  const toggleAIPerspective = (matchId: string) => {
+    setExpandedPerspectives(prev => ({
+      ...prev,
+      [matchId]: !prev[matchId]
+    }));
+  };
+
+  const renderAIPerspective = (matchId: string) => {
+    const perspective = aiPerspectives[matchId];
+    if (!perspective) return null;
+
+    const isExpanded = expandedPerspectives[matchId];
+
+    return (
+      <div className="mb-6 border border-blue-200 rounded-lg overflow-hidden">
+        <button
+          onClick={() => toggleAIPerspective(matchId)}
+          className="w-full px-4 py-3 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center justify-between text-left"
+        >
+          <span className="text-blue-800 font-medium">AI Perspective</span>
+          <svg
+            className={`w-5 h-5 text-blue-600 transform transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {isExpanded && (
+          <div className="p-4 bg-white">
+            <p className="text-gray-700 text-sm whitespace-pre-line">{perspective}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading matches...</div>;
   }
@@ -360,6 +402,7 @@ export default function PollList() {
 
             return (
               <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
+                {isActive && renderAIPerspective(poll.Match_ID)}
                 <div className="mb-6">
                   <h3 className="text-xl font-semibold mb-2">Match {poll.Match_ID}: {poll.Team_1} vs {poll.Team_2}</h3>
                   <p className="text-gray-600">Match Date: {matchDate}</p>
