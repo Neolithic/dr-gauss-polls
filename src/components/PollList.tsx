@@ -10,7 +10,28 @@ import {
  ColDef,
  ValueFormatterParams,
 } from 'ag-grid-community';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -429,6 +450,82 @@ export default function PollList() {
       .map(([user_name, amount]) => ({ user_name, amount }))
       .sort((a, b) => b.amount - a.amount);
 
+    // Calculate cumulative earnings by match for each user
+    const matchIds = Array.from(new Set(leaderboardData.map(row => row.match_id)))
+      .sort((a, b) => parseInt(a) - parseInt(b));
+
+    const userMatchTotals: { [key: string]: { [key: string]: number } } = {};
+    const cumulativeData: { [key: string]: number[] } = {};
+
+    // Initialize user data
+    summaryData.forEach(({ user_name }) => {
+      userMatchTotals[user_name] = {};
+      cumulativeData[user_name] = [];
+    });
+
+    // Calculate totals for each user per match
+    leaderboardData.forEach(row => {
+      if (!userMatchTotals[row.user_name][row.match_id]) {
+        userMatchTotals[row.user_name][row.match_id] = 0;
+      }
+      userMatchTotals[row.user_name][row.match_id] += row.amount;
+    });
+
+    // Calculate cumulative totals
+    matchIds.forEach(matchId => {
+      Object.keys(userMatchTotals).forEach(userName => {
+        const previousTotal = cumulativeData[userName].length > 0 
+          ? cumulativeData[userName][cumulativeData[userName].length - 1] 
+          : 0;
+        const matchAmount = userMatchTotals[userName][matchId] || 0;
+        cumulativeData[userName].push(previousTotal + matchAmount);
+      });
+    });
+
+    // Prepare chart data
+    const chartData = {
+      labels: ['Start', ...matchIds.map(id => `Match ${id}`)],
+      datasets: Object.entries(cumulativeData).map(([userName, data], index) => ({
+        label: userName,
+        data: [0, ...data],
+        borderColor: `hsl(${index * (360 / Object.keys(cumulativeData).length)}, 70%, 50%)`,
+        backgroundColor: `hsl(${index * (360 / Object.keys(cumulativeData).length)}, 70%, 50%)`,
+        tension: 0.1
+      }))
+    };
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom' as const,
+          labels: {
+            padding: 20
+          }
+        },
+        title: {
+          display: true,
+          text: 'Earnings Evolution by Match',
+          font: {
+            size: 16,
+            weight: 'bold' as const
+          },
+          padding: {
+            bottom: 20
+          }
+        },
+      },
+      scales: {
+        y: {
+          title: {
+            display: true,
+            text: 'Cumulative Earnings'
+          }
+        }
+      }
+    };
+
     const summaryColumns: ColDef[] = [
       { field: 'user_name', headerName: 'User', flex: 1 },
       { 
@@ -468,16 +565,22 @@ export default function PollList() {
 
     if (activeTab === 'leaderboard') {
       return (
-        <div className="ag-theme-alpine" style={{ height: '600px', width: '100%' }}>
-          <h2 className="text-xl font-semibold mb-4">Total Earnings</h2>
-          <AgGridReact
-            rowData={summaryData}
-            columnDefs={summaryColumns}
-            defaultColDef={{
-              sortable: true,
-              filter: true,
-            }}
-          />
+        <div className="space-y-12">
+          <div className="ag-theme-alpine" style={{ height: '400px', width: '100%' }}>
+            <h2 className="text-xl font-semibold mb-4">Total Earnings</h2>
+            <AgGridReact
+              rowData={summaryData}
+              columnDefs={summaryColumns}
+              defaultColDef={{
+                sortable: true,
+                filter: true,
+              }}
+            />
+          </div>
+          <div style={{ height: '500px', width: '100%', padding: '2rem 0' }}>
+            <h2 className="text-xl font-semibold mb-4">Earnings Evolution</h2>
+            <Line data={chartData} options={chartOptions} />
+          </div>
         </div>
       );
     } else if (activeTab === 'details') {
