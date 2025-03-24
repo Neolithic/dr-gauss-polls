@@ -18,7 +18,23 @@ export async function getPollTypes(): Promise<PollType[]> {
   return ['winner', 'victory_margin'];
 }
 
+export async function checkLoggedIn() {
+  const session = await getServerSession();
+
+  if (!session) {
+    throw new Error('Unauthorized');
+  }
+
+  if (!session.user?.email) {
+    throw new Error('Unauthorized');
+  }
+
+}
+
 export async function getPolls() {
+
+  await checkLoggedIn();
+  
   const supabase = await getSupabaseClient();
   const { data, error } = await supabase
     .from('MATCHES')
@@ -54,6 +70,7 @@ interface AIVote {
 }
 
 export async function getAllVotes() {
+
   const session = await getServerSession();
 
   if (!session) {
@@ -205,4 +222,40 @@ export async function getAIVotes(): Promise<{ [matchId: string]: string }> {
     acc[vote.match_id] = vote.reasoning;
     return acc;
   }, {} as { [matchId: string]: string });
+}
+
+export async function getLeaderboardData() {
+  await checkLoggedIn();
+  const supabase = await getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from('VOTING_RESULTS')
+    .select(`
+      amount,
+      match_id,
+      poll_type,
+      user_email,
+      users:USERS!VOTING_RESULTS_user_email_fkey(user_name)
+    `)
+    .order('match_id', { ascending: true });
+
+  if (error) throw error;
+
+  // Transform the data to flatten the structure
+  const results = data.map(record => {
+    let uname = 'Unknown';
+    if (record.users && typeof record.users === 'object' && 'user_name' in record.users)
+      uname = record.users.user_name as string;
+    else
+      uname = record.users[0]?.user_name || 'Unknown';
+
+    return {
+      user_name: uname,
+      match_id: record.match_id,
+      poll_type: record.poll_type,
+      amount: record.amount
+    };
+  });
+
+  return results;
 } 

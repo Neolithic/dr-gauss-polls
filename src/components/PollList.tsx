@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { getPolls, getAllVotes, submitVote, getMarginOptions, getAIVotes, type PollType } from '@/app/actions';
+import { getPolls, getAllVotes, submitVote, getMarginOptions, getAIVotes, getLeaderboardData, type PollType } from '@/app/actions';
+import { AgGridReact } from 'ag-grid-react';
+import { 
+ ModuleRegistry,
+ AllCommunityModule,
+ ColDef,
+ ValueFormatterParams,
+} from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Poll {
   Match_ID: string;
@@ -37,7 +47,14 @@ interface UserVotes {
 
 type MarginOptions = Awaited<ReturnType<typeof getMarginOptions>>;
 
-type TabType = 'active' | 'completed';
+type TabType = 'active' | 'completed' | 'leaderboard' | 'details';
+
+interface LeaderboardRow {
+  user_name: string;
+  match_id: string;
+  poll_type: string;
+  amount: number;
+}
 
 export default function PollList() {
   const { data: session } = useSession();
@@ -53,30 +70,37 @@ export default function PollList() {
   const [nextPollClose, setNextPollClose] = useState<Date | null>(null);
   const [aiPerspectives, setAIPerspectives] = useState<{ [matchId: string]: string }>({});
   const [expandedPerspectives, setExpandedPerspectives] = useState<{ [key: string]: boolean }>({});
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardRow[] | null>(null);
+
 
   const fetchData = async () => {
     try {
-      const [pollsData, votesData, marginOpts, aiVotes] = await Promise.all([
-        getPolls(),
-        getAllVotes(),
-        getMarginOptions(),
-        getAIVotes()
-      ]);
-      
-      setPolls(pollsData);
-      setVoteCounts(votesData.voteCounts);
-      setUserVotes(votesData.userVotes);
-      setVotersByMatch(votesData.votersByMatch);
-      setMarginOptions(marginOpts);
-      setAIPerspectives(aiVotes);
+      if (activeTab === 'leaderboard') {
+        const data = await getLeaderboardData();
+        setLeaderboardData(data);
+      } else {
+        const [pollsData, votesData, marginOpts, aiVotes] = await Promise.all([
+          getPolls(),
+          getAllVotes(),
+          getMarginOptions(),
+          getAIVotes()
+        ]);
+        
+        setPolls(pollsData);
+        setVoteCounts(votesData.voteCounts);
+        setUserVotes(votesData.userVotes);
+        setVotersByMatch(votesData.votersByMatch);
+        setMarginOptions(marginOpts);
+        setAIPerspectives(aiVotes);
 
-      // Find the next poll to close
-      const now = new Date();
-      const nextClose = pollsData
-        .map(poll => new Date(poll.Poll_Close_Time))
-        .filter(date => date > now)
-        .sort((a, b) => a.getTime() - b.getTime())[0] || null;
-      setNextPollClose(nextClose);
+        // Find the next poll to close
+        const now = new Date();
+        const nextClose = pollsData
+          .map(poll => new Date(poll.Poll_Close_Time))
+          .filter(date => date > now)
+          .sort((a, b) => a.getTime() - b.getTime())[0] || null;
+        setNextPollClose(nextClose);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -321,6 +345,30 @@ export default function PollList() {
                 {completedPollsCount}
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab('leaderboard')}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'leaderboard'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              Leaderboard
+            </button>
+            <button
+              onClick={() => setActiveTab('details')}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${activeTab === 'details'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              Detailed Breakdown
+            </button>
           </nav>
         </div>
       </div>
@@ -365,8 +413,94 @@ export default function PollList() {
     );
   };
 
+  const renderLeaderboard = () => {
+    if (!leaderboardData) fetchData();
+
+    if (!leaderboardData) return null;
+    
+    // Calculate user totals
+    const userTotals = leaderboardData.reduce((acc, row) => {
+      acc[row.user_name] = (acc[row.user_name] || 0) + row.amount;
+      return acc;
+    }, {} as { [key: string]: number });
+
+    // Convert to array and sort by total amount
+    const summaryData = Object.entries(userTotals)
+      .map(([user_name, amount]) => ({ user_name, amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const summaryColumns: ColDef[] = [
+      { field: 'user_name', headerName: 'User', flex: 1 },
+      { 
+        field: 'amount', 
+        headerName: 'Total Amount',
+        flex: 1,
+        cellStyle: (params: ValueFormatterParams) => ({
+          color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
+          fontWeight: 'bold'
+        }),
+        valueFormatter: (params: ValueFormatterParams) => params.value.toFixed(2)
+      }
+    ];
+
+    const detailColumns: ColDef<LeaderboardRow>[] = [
+      { field: 'user_name', headerName: 'User', flex: 1 },
+      { field: 'match_id', headerName: 'Match', flex: 1 },
+      { field: 'poll_type', headerName: 'Poll Type', flex: 1 },
+      { 
+        field: 'amount', 
+        headerName: 'Amount',
+        flex: 1,
+        cellStyle: (params: ValueFormatterParams) => ({
+          color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
+        }),
+        valueFormatter: (params: ValueFormatterParams) => params.value.toFixed(2)
+      }
+    ];
+
+    // Sort by user_name and then match_id
+    const sortedData = [...leaderboardData].sort((a, b) => {
+      if (a.user_name !== b.user_name) {
+        return a.user_name.localeCompare(b.user_name);
+      }
+      return parseInt(a.match_id) - parseInt(b.match_id);
+    });
+
+    if (activeTab === 'leaderboard') {
+      return (
+        <div className="ag-theme-alpine" style={{ height: '600px', width: '100%' }}>
+          <h2 className="text-xl font-semibold mb-4">Total Earnings</h2>
+          <AgGridReact
+            rowData={summaryData}
+            columnDefs={summaryColumns}
+            defaultColDef={{
+              sortable: true,
+              filter: true,
+            }}
+          />
+        </div>
+      );
+    } else if (activeTab === 'details') {
+      return (
+        <div className="ag-theme-alpine" style={{ height: '600px', width: '100%' }}>
+          <h2 className="text-xl font-semibold mb-4">User Level Score Breakdown</h2>
+          <AgGridReact
+            rowData={sortedData}
+            columnDefs={detailColumns}
+            defaultColDef={{
+              sortable: true,
+              filter: true,
+            }}
+          />
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   if (loading) {
-    return <div className="text-center py-8">Loading matches...</div>;
+    return <div className="text-center py-8">Loading...</div>;
   }
 
   if (polls.length === 0) {
@@ -381,42 +515,46 @@ export default function PollList() {
   return (
     <div>
       {renderTabs()}
-      <div className="space-y-8">
-        {filteredPolls.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No {activeTab === 'active' ? 'active' : 'completed'} polls available
-          </div>
-        ) : (
-          filteredPolls.map((poll) => {
-            const isActive = isPollActive(poll.Poll_Close_Time);
-            const matchDate = new Date(poll.Date + 'T00:00:00').toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            });
-            const closeTime = new Date(poll.Poll_Close_Time).toLocaleString('en-US', {
-              dateStyle: 'medium',
-              timeStyle: 'short',
-            });
+      {(activeTab === 'leaderboard' || activeTab === 'details') ? (
+        renderLeaderboard()
+      ) : (
+        <div className="space-y-8">
+          {filteredPolls.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              No {activeTab === 'active' ? 'active' : 'completed'} polls available
+            </div>
+          ) : (
+            filteredPolls.map((poll) => {
+              const isActive = isPollActive(poll.Poll_Close_Time);
+              const matchDate = new Date(poll.Date + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              });
+              const closeTime = new Date(poll.Poll_Close_Time).toLocaleString('en-US', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              });
 
-            return (
-              <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
-                {isActive && renderAIPerspective(poll.Match_ID)}
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold mb-2">Match {poll.Match_ID}: {poll.Team_1} vs {poll.Team_2}</h3>
-                  <p className="text-gray-600">Match Date: {matchDate}</p>
-                  <p className="text-gray-600">Poll {isActive ? 'Closes' : 'Closed'}: {closeTime}</p>
+              return (
+                <div key={poll.Match_ID} className="bg-white p-6 rounded-lg shadow-md">
+                  {isActive && renderAIPerspective(poll.Match_ID)}
+                  <div className="mb-6">
+                    <h3 className="text-xl font-semibold mb-2">Match {poll.Match_ID}: {poll.Team_1} vs {poll.Team_2}</h3>
+                    <p className="text-gray-600">Match Date: {matchDate}</p>
+                    <p className="text-gray-600">Poll {isActive ? 'Closes' : 'Closed'}: {closeTime}</p>
+                  </div>
+                  <div className="space-y-8">
+                    {renderWinnerPoll(poll, isActive)}
+                    {renderMarginPoll(poll, isActive)}
+                  </div>
                 </div>
-                <div className="space-y-8">
-                  {renderWinnerPoll(poll, isActive)}
-                  {renderMarginPoll(poll, isActive)}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 } 
