@@ -4,6 +4,7 @@ import NextAuth from "next-auth/next";
 import GoogleProvider from "next-auth/providers/google";
 import type { NextAuthOptions } from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
+import { getSupabaseClient } from '@/utils/supabase';
 
 declare module 'next-auth' {
   interface Session {
@@ -16,13 +17,23 @@ declare module 'next-auth' {
   }
 }
 
-const getAllowedEmails = () => {
-  const emailsString = process.env.ALLOWED_EMAILS;
-  if (!emailsString) {
-    console.warn('ALLOWED_EMAILS environment variable is not set');
+const getAllowedEmails = async () => {
+  try {
+    const supabase = await getSupabaseClient();
+    const { data, error } = await supabase
+      .from('USERS')
+      .select('user_email');
+
+    if (error) {
+      console.error('Error fetching allowed emails:', error);
+      return new Set<string>();
+    }
+
+    return new Set(data.map(user => user.user_email.toLowerCase()));
+  } catch (error) {
+    console.error('Error in getAllowedEmails:', error);
     return new Set<string>();
   }
-  return new Set(emailsString.split(',').map(email => email.trim().toLowerCase()));
 };
 
 const authOptions: NextAuthOptions = {
@@ -56,10 +67,10 @@ const authOptions: NextAuthOptions = {
           return false;
         }
 
-        const allowedEmails = getAllowedEmails();
+        const allowedEmails = await getAllowedEmails();
         
         if (allowedEmails.size === 0) {
-          console.error('No allowed emails configured');
+          console.error('No allowed emails found in database');
           return false;
         }
 
