@@ -613,6 +613,11 @@ export default function PollList() {
   const filteredPolls = polls.filter(poll => {
     const isActive = isPollActive(poll.Poll_Close_Time);
     return activeTab === 'active' ? isActive : !isActive;
+  }).sort((a, b) => {
+    if (activeTab === 'completed') {
+      return parseInt(b.Match_ID) - parseInt(a.Match_ID);
+    }
+    return parseInt(a.Match_ID) - parseInt(b.Match_ID);
   });
 
   return (
