@@ -22,7 +22,8 @@ const getAllowedEmails = async () => {
     const supabase = await getSupabaseClient();
     const { data, error } = await supabase
       .from('USERS')
-      .select('user_email');
+      .select('user_email')
+      .is('last_match_id', null);
 
     if (error) {
       console.error('Error fetching allowed emails:', error);
