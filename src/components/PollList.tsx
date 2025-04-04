@@ -625,17 +625,31 @@ export default function PollList() {
       return acc;
     }, {} as { [key: string]: AdhocPoll[] });
 
+    // Filter polls based on active tab
+    const filteredPollsByMatch = Object.entries(pollsByMatch).reduce((acc, [matchId, matchPolls]) => {
+      const isActive = matchPolls.some(poll => isPollActive(poll.poll_close_time));
+      if ((activeTab === 'active' && isActive) || (activeTab === 'completed' && !isActive)) {
+        acc[matchId] = matchPolls;
+      }
+      return acc;
+    }, {} as { [key: string]: AdhocPoll[] });
+
+    if (Object.keys(filteredPollsByMatch).length === 0) return null;
+
     return (
       <div className="space-y-8 mb-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-red-600 animate-bounce">Spotlight Poll</h2>          
-        </div>
-        {Object.entries(pollsByMatch).map(([matchId, matchPolls]) => {
+        {Object.keys(filteredPollsByMatch).length > 0 && (
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-red-600 animate-bounce">Spotlight Poll</h2>          
+          </div>
+        )}
+        {Object.entries(filteredPollsByMatch).map(([matchId, matchPolls]) => {
           const isActive = matchPolls.some(poll => isPollActive(poll.poll_close_time));
           const closeTime = new Date(Math.max(...matchPolls.map(p => new Date(p.poll_close_time).getTime())))
             .toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
           const pollType = matchPolls[0].poll_type;
-          const isExpanded = expandedAdhocPolls[matchId] ?? expandedAdhocPolls.all ?? true;
+          // Keep closed polls minimized by default
+          const isExpanded = isActive ? (expandedAdhocPolls[matchId] ?? expandedAdhocPolls.all ?? true) : false;
 
           return (
             <div key={matchId} className="bg-blue-50 p-4 rounded-lg shadow-md border-2 border-blue-200">
