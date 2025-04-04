@@ -12,10 +12,10 @@ export async function getMarginOptions() {
   } as const;
 }
 
-export type PollType = 'winner' | 'victory_margin';
+export type PollType = 'winner' | 'victory_margin' | 'final_ipl_winner';
 
 export async function getPollTypes(): Promise<PollType[]> {
-  return ['winner', 'victory_margin'];
+  return ['winner', 'victory_margin', 'final_ipl_winner'];
 }
 
 export async function checkLoggedIn() {
@@ -87,10 +87,25 @@ export async function getAllVotes() {
   if (matchError) throw matchError;
 
   // Create a map of match IDs to close times
-  const closeTimeMap = matches.reduce((acc: { [key: string]: string }, match) => {
-    acc[match.Match_ID] = match.Poll_Close_Time;
+  const closeTimeMap_regular = matches.reduce((acc: { [key: string]: string }, match) => {
+    acc[match.Match_ID + "-winner"] = match.Poll_Close_Time;
+    acc[match.Match_ID + "-victory_margin"] = match.Poll_Close_Time;    
     return acc;
   }, {});
+
+  //now add adhoc polls
+  const { data: adhocPolls, error: adhocError } = await supabase
+    .from('ADHOC_POLLS')
+    .select('match_id, poll_type,poll_close_time')  
+
+  if (adhocError) throw adhocError;
+  
+  const closeTimeMap_adhoc = adhocPolls.reduce((acc: { [key: string]: string }, poll) => {
+    acc[poll.match_id + "-" + poll.poll_type] = poll.poll_close_time;
+    return acc;
+  }, {});
+
+  const closeTimeMap = { ...closeTimeMap_regular, ...closeTimeMap_adhoc };
 
   // Get all votes
   const { data: votes, error } = await supabase
@@ -110,7 +125,7 @@ export async function getAllVotes() {
 
   // First pass: find the latest valid vote for each user-match-polltype combination
   votes.forEach((vote: Vote) => {
-    const matchCloseTime = closeTimeMap[vote.match_id];
+    const matchCloseTime = closeTimeMap[vote.match_id + "-" + vote.poll_type];
     if (!matchCloseTime || vote.created_timestamp > matchCloseTime) return;
 
     const voteKey = `${vote.match_id}-${vote.poll_type}-${vote.user_email}`;
@@ -122,11 +137,18 @@ export async function getAllVotes() {
   // Second pass: process only the latest valid votes
   latestVotes.forEach((vote: Vote) => {
     // Initialize structures if needed
+    
     if (!voteCounts[vote.match_id]) {
-      voteCounts[vote.match_id] = { winner: {}, victory_margin: {} };
+      voteCounts[vote.match_id] = {};
+    }
+    if (!voteCounts[vote.match_id][vote.poll_type]) {
+      voteCounts[vote.match_id][vote.poll_type] = {};
     }
     if (!votersByMatch[vote.match_id]) {
-      votersByMatch[vote.match_id] = { winner: {}, victory_margin: {} };
+      votersByMatch[vote.match_id] = {};
+    }
+    if (!votersByMatch[vote.match_id][vote.poll_type]) {
+      votersByMatch[vote.match_id][vote.poll_type] = {};
     }
     if (!votersByMatch[vote.match_id][vote.poll_type][vote.option_voted]) {
       votersByMatch[vote.match_id][vote.poll_type][vote.option_voted] = [];
@@ -178,20 +200,38 @@ export async function submitVote(matchId: string, option: string, pollType: Poll
   const now = new Date().toISOString();
   const supabase = await getSupabaseClient();
 
-  // Check if poll is still open
-  const { data: matchData, error: matchError } = await supabase
-    .from('MATCHES')
-    .select('Poll_Close_Time')
-    .eq('Match_ID', matchId)
+  // First check if this is an adhoc poll
+  const { data: adhocData, error: adhocError } = await supabase
+    .from('ADHOC_POLLS')
+    .select('poll_close_time')
+    .eq('match_id', matchId)
+    .eq('poll_type', pollType)
+    .eq('option', option)
     .single();
 
-  if (matchError) throw matchError;
-
-  if (now > matchData.Poll_Close_Time) {
-    throw new Error('Poll has closed');
+  if (adhocError && adhocError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+    throw adhocError;
   }
 
-  // Check user's latest vote for this match and poll type
+  // If this is an adhoc poll, use its closing time
+  if (adhocData) {
+    if (now > adhocData.poll_close_time) {
+      throw new Error('Adhoc poll has closed');
+    }
+  } else {
+    // If not an adhoc poll, check regular match poll
+    const { data: matchData, error: matchError } = await supabase
+      .from('MATCHES')
+      .select('Poll_Close_Time')
+      .eq('Match_ID', matchId)
+      .single();
+
+    if (matchError) throw matchError;
+
+    if (now > matchData.Poll_Close_Time) {
+      throw new Error('Poll has closed');
+    }
+  }
 
   // Insert new vote record
   const { error: voteError } = await supabase
@@ -258,4 +298,17 @@ export async function getLeaderboardData() {
   });
 
   return results;
+}
+
+export async function getAdhocPolls() {
+  await checkLoggedIn();
+  
+  const supabase = await getSupabaseClient();
+  const { data, error } = await supabase
+    .from('ADHOC_POLLS')
+    .select('*')
+    .order('poll_close_time', { ascending: true });
+
+  if (error) throw error;
+  return data;
 } 

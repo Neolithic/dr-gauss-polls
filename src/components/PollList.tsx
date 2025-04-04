@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { getPolls, getAllVotes, submitVote, getMarginOptions, getAIVotes, getLeaderboardData, type PollType } from '@/app/actions';
+import { getPolls, getAllVotes, submitVote, getMarginOptions, getAIVotes, getLeaderboardData, getAdhocPolls, type PollType } from '@/app/actions';
 import { AgGridReact } from 'ag-grid-react';
 import { 
  ModuleRegistry,
@@ -43,6 +43,13 @@ interface Poll {
   Poll_Close_Time: string;
 }
 
+interface AdhocPoll {
+  match_id: string;
+  poll_type: string;
+  option: string;
+  poll_close_time: string;
+}
+
 interface VoteCounts {
   [option: string]: number;
 }
@@ -80,6 +87,7 @@ interface LeaderboardRow {
 export default function PollList() {
   const { data: session } = useSession();
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [adhocPolls, setAdhocPolls] = useState<AdhocPoll[]>([]);
   const [loading, setLoading] = useState(true);
   const [voteCounts, setVoteCounts] = useState<{ [matchId: string]: { [pollType: string]: VoteCounts } }>({});
   const [userVotes, setUserVotes] = useState<{ [matchId: string]: UserVotes }>({});
@@ -92,6 +100,7 @@ export default function PollList() {
   const [aiPerspectives, setAIPerspectives] = useState<{ [matchId: string]: string }>({});
   const [expandedPerspectives, setExpandedPerspectives] = useState<{ [key: string]: boolean }>({});
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardRow[] | null>(null);
+  const [expandedAdhocPolls, setExpandedAdhocPolls] = useState<{ [key: string]: boolean }>({});
 
 
   const fetchData = async () => {
@@ -100,14 +109,16 @@ export default function PollList() {
         const data = await getLeaderboardData();
         setLeaderboardData(data);
       } else {
-        const [pollsData, votesData, marginOpts, aiVotes] = await Promise.all([
+        const [pollsData, votesData, marginOpts, aiVotes, adhocPollsData] = await Promise.all([
           getPolls(),
           getAllVotes(),
           getMarginOptions(),
-          getAIVotes()
+          getAIVotes(),
+          getAdhocPolls()
         ]);
         
         setPolls(pollsData);
+        setAdhocPolls(adhocPollsData);
         setVoteCounts(votesData.voteCounts);
         setUserVotes(votesData.userVotes);
         setVotersByMatch(votesData.votersByMatch);
@@ -116,8 +127,8 @@ export default function PollList() {
 
         // Find the next poll to close
         const now = new Date();
-        const nextClose = pollsData
-          .map(poll => new Date(poll.Poll_Close_Time))
+        const nextClose = [...pollsData, ...adhocPollsData]
+          .map(poll => new Date(poll.Poll_Close_Time || poll.poll_close_time))
           .filter(date => date > now)
           .sort((a, b) => a.getTime() - b.getTime())[0] || null;
         setNextPollClose(nextClose);
@@ -602,6 +613,81 @@ export default function PollList() {
     return null;
   };
 
+  const renderAdhocPolls = () => {
+    if (!adhocPolls.length) return null;
+
+    // Group adhoc polls by match_id
+    const pollsByMatch = adhocPolls.reduce((acc, poll) => {
+      if (!acc[poll.match_id]) {
+        acc[poll.match_id] = [];
+      }
+      acc[poll.match_id].push(poll);
+      return acc;
+    }, {} as { [key: string]: AdhocPoll[] });
+
+    return (
+      <div className="space-y-8 mb-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-red-600 animate-bounce">Spotlight Poll</h2>          
+        </div>
+        {Object.entries(pollsByMatch).map(([matchId, matchPolls]) => {
+          const isActive = matchPolls.some(poll => isPollActive(poll.poll_close_time));
+          const closeTime = new Date(Math.max(...matchPolls.map(p => new Date(p.poll_close_time).getTime())))
+            .toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+          const pollType = matchPolls[0].poll_type;
+          const isExpanded = expandedAdhocPolls[matchId] ?? expandedAdhocPolls.all ?? true;
+
+          return (
+            <div key={matchId} className="bg-blue-50 p-4 rounded-lg shadow-md border-2 border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-lg font-semibold">{pollType === 'final_ipl_winner' ? 'Who will be the IPL winner?' : pollType}</h3>
+                  <p className="text-sm text-gray-600">Poll {isActive ? 'Closes' : 'Closed'}: {closeTime}</p>
+                </div>
+                <button 
+                  onClick={() => setExpandedAdhocPolls(prev => ({ ...prev, [matchId]: !prev[matchId] }))}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  {isExpanded ? 'Collapse' : 'Expand'}
+                </button>
+              </div>
+              {isExpanded && (
+                <div className="grid grid-cols-2 gap-2">
+                  {matchPolls.map((poll, index) => {
+                    const votes = voteCounts[matchId]?.[poll.poll_type]?.[poll.option] || 0;
+                    const totalVotes = Object.values(voteCounts[matchId]?.[poll.poll_type] || {}).reduce((sum, count) => sum + count, 0);
+                    const userVote = userVotes[matchId]?.[poll.poll_type];
+                    const isVoting = voting[`${matchId}-${poll.poll_type}`];
+
+                    return (
+                      <div key={index} className="bg-white p-2 rounded-lg">
+                        <button
+                          onClick={() => handleVote(matchId, poll.option, poll.poll_type as PollType)}
+                          disabled={isVoting || !isActive}
+                          className={`w-full p-2 text-center border rounded-lg transition-colors text-sm ${
+                            userVote === poll.option
+                              ? 'bg-green-50 border-green-500'
+                              : isActive ? 'hover:bg-blue-50' : 'bg-gray-50'
+                          }`}
+                        >
+                          {poll.option}
+                          <div className="text-xs text-gray-600 mt-0.5">
+                            {calculatePercentage(votes, totalVotes)}%
+                          </div>
+                        </button>
+                        {renderVoterList(matchId, poll.poll_type, poll.option)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading...</div>;
   }
@@ -627,6 +713,7 @@ export default function PollList() {
         renderLeaderboard()
       ) : (
         <div className="space-y-8">
+          {renderAdhocPolls()}
           {filteredPolls.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               No {activeTab === 'active' ? 'active' : 'completed'} polls available
