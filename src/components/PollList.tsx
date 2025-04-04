@@ -640,7 +640,7 @@ export default function PollList() {
       <div className="space-y-8 mb-8">
         {Object.keys(filteredPollsByMatch).length > 0 && (
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-red-600 animate-bounce">Spotlight Poll</h2>          
+            <h2 className={`text-2xl font-bold text-red-600 ${activeTab === 'active' ? 'animate-bounce' : ''}`}>Spotlight Poll</h2>          
           </div>
         )}
         {Object.entries(filteredPollsByMatch).map(([matchId, matchPolls]) => {
