@@ -41,6 +41,7 @@ interface Poll {
   Team_2: string;
   Date: string;
   Poll_Close_Time: string;
+  marginOptions: MarginOptions;
 }
 
 interface AdhocPoll {
@@ -123,10 +124,10 @@ export default function PollList() {
         setVotersByMatch(votesData.votersByMatch);
         setAIPerspectives(aiVotes);
 
-        // Fetch margin options for each match
+        // Create margin options map from the polls data
         const marginOptsMap: { [matchId: string]: MarginOptions } = {};
         for (const poll of pollsData) {
-          marginOptsMap[poll.Match_ID] = await getMarginOptions(poll.Match_ID);
+          marginOptsMap[poll.Match_ID] = poll.marginOptions;
         }
         setMarginOptions(marginOptsMap);
 

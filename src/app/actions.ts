@@ -43,7 +43,6 @@ export async function checkLoggedIn() {
 }
 
 export async function getPolls() {
-
   await checkLoggedIn();
   
   const supabase = await getSupabaseClient();
@@ -53,7 +52,19 @@ export async function getPolls() {
     .order('Date', { ascending: true });
 
   if (error) throw error;
-  return data;
+  
+  // Get margin options for each match
+  const pollsWithMarginOptions = await Promise.all(
+    data.map(async (poll) => {
+      const marginOptions = await getMarginOptions(poll.Match_ID);
+      return {
+        ...poll,
+        marginOptions
+      };
+    })
+  );
+  
+  return pollsWithMarginOptions;
 }
 
 interface Vote {
