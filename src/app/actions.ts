@@ -3,7 +3,18 @@
 import { getSupabaseClient } from '@/utils/supabase';
 import { getServerSession } from 'next-auth';
 
-export async function getMarginOptions() {
+export async function getMarginOptions(matchId?: string) {
+  // For match IDs 21 and onwards
+  if (matchId && parseInt(matchId) >= 21) {
+    return {
+      A: '0-12 runs / 6 or less balls remaining',
+      B: '13-25 runs / 7-12 balls remaining',
+      C: '26-40 runs / 13-22 balls remaining',
+      D: '41+ runs / 23+ balls remaining'
+    } as const;
+  }
+
+  // Default options for matches before ID 21
   return {
     A: '0-10 runs / 4 or less balls remaining',
     B: '11-20 runs / 5-9 balls remaining',

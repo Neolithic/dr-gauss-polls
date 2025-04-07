@@ -94,7 +94,7 @@ export default function PollList() {
   const [votersByMatch, setVotersByMatch] = useState<VotersByMatch>({});
   const [voting, setVoting] = useState<{ [key: string]: boolean }>({});
   const [hiddenVoterLists, setHiddenVoterLists] = useState<{ [key: string]: boolean }>({});
-  const [marginOptions, setMarginOptions] = useState<MarginOptions | null>(null);
+  const [marginOptions, setMarginOptions] = useState<{ [matchId: string]: MarginOptions }>({});
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [nextPollClose, setNextPollClose] = useState<Date | null>(null);
   const [aiPerspectives, setAIPerspectives] = useState<{ [matchId: string]: string }>({});
@@ -109,10 +109,9 @@ export default function PollList() {
         const data = await getLeaderboardData();
         setLeaderboardData(data);
       } else {
-        const [pollsData, votesData, marginOpts, aiVotes, adhocPollsData] = await Promise.all([
+        const [pollsData, votesData, aiVotes, adhocPollsData] = await Promise.all([
           getPolls(),
           getAllVotes(),
-          getMarginOptions(),
           getAIVotes(),
           getAdhocPolls()
         ]);
@@ -122,8 +121,14 @@ export default function PollList() {
         setVoteCounts(votesData.voteCounts);
         setUserVotes(votesData.userVotes);
         setVotersByMatch(votesData.votersByMatch);
-        setMarginOptions(marginOpts);
         setAIPerspectives(aiVotes);
+
+        // Fetch margin options for each match
+        const marginOptsMap: { [matchId: string]: MarginOptions } = {};
+        for (const poll of pollsData) {
+          marginOptsMap[poll.Match_ID] = await getMarginOptions(poll.Match_ID);
+        }
+        setMarginOptions(marginOptsMap);
 
         // Find the next poll to close
         const now = new Date();
@@ -286,18 +291,19 @@ export default function PollList() {
   };
 
   const renderMarginPoll = (poll: Poll, isActive: boolean) => {
-    if (!marginOptions) return null;
+    if (!marginOptions[poll.Match_ID]) return null;
 
     const votes = voteCounts[poll.Match_ID]?.victory_margin || {};
     const totalVotes = Object.values(votes).reduce((sum, count) => sum + count, 0);
     const userVote = userVotes[poll.Match_ID]?.victory_margin;
     const isVoting = voting[`${poll.Match_ID}-victory_margin`];
 
+    const mO = marginOptions[poll.Match_ID];
     return (
       <div>
         <h4 className="text-lg font-semibold mb-3">Victory Margin Poll</h4>
         <div className="grid grid-cols-2 gap-4">
-          {Object.entries(marginOptions).map(([key, description]) => (
+          {Object.entries(marginOptions[poll.Match_ID]).map(([key, description]) => (
             <div key={key}>
               <button
                 onClick={() => handleVote(poll.Match_ID, key, 'victory_margin')}
@@ -317,9 +323,9 @@ export default function PollList() {
             </div>
           ))}
         </div>
-        {userVote && marginOptions[userVote as keyof typeof marginOptions] && (
+        {userVote && (
           <p className="text-center text-green-600 mt-2">
-            Current vote: {marginOptions[userVote as keyof typeof marginOptions]}
+            Current vote: {mO[userVote as keyof typeof mO]}
           </p>
         )}
       </div>
