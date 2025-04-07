@@ -478,13 +478,7 @@ export default function PollList() {
       userTotalsByPollType[row.user_name][row.poll_type] += row.amount;
     });
     
-    // Calculate total amount for each user
-    const userTotals = Object.entries(userTotalsByPollType).reduce((acc, [userName, pollTypeTotals]) => {
-      acc[userName] = Object.values(pollTypeTotals).reduce((sum, amount) => sum + amount, 0);
-      return acc;
-    }, {} as { [key: string]: number });
-
-    // Convert to array and sort by total amount
+     // Convert to array and sort by total amount
     const summaryData = Object.entries(userTotalsByPollType)
       .map(([user_name, pollTypeTotals]) => {
         const totalAmount = Object.values(pollTypeTotals).reduce((sum, amount) => sum + amount, 0);
@@ -572,12 +566,14 @@ export default function PollList() {
       }
     };
 
+    const minWidth = 150;
     const summaryColumns: ColDef[] = [
-      { field: 'user_name', headerName: 'User', flex: 1 },
+      { field: 'user_name', headerName: 'User', flex: 1, minWidth },
       { 
         field: 'total', 
         headerName: 'Total Amount',
         flex: 1,
+        minWidth,
         cellStyle: (params: ValueFormatterParams) => ({
           color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
           fontWeight: 'bold'
@@ -592,6 +588,7 @@ export default function PollList() {
         field: pollType,
         headerName: pollType.charAt(0).toUpperCase() + pollType.slice(1).replace(/_/g, ' '),
         flex: 1,
+        minWidth,
         cellStyle: (params: ValueFormatterParams) => ({
           color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
         }),
@@ -607,6 +604,7 @@ export default function PollList() {
         field: 'amount', 
         headerName: 'Amount',
         flex: 1,
+        minWidth,
         cellStyle: (params: ValueFormatterParams) => ({
           color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
         }),
@@ -711,7 +709,7 @@ export default function PollList() {
             .toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
           const pollType = matchPolls[0].poll_type;
           // Keep closed polls minimized by default
-          const isExpanded = isActive ? (expandedAdhocPolls[matchId] ?? expandedAdhocPolls.all ?? true) : false;
+          const isExpanded = expandedAdhocPolls[matchId] ?? (isActive ? expandedAdhocPolls.all ?? true : false);
 
           return (
             <div key={matchId} className="bg-blue-50 p-4 rounded-lg shadow-md border-2 border-blue-200">
