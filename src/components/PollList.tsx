@@ -660,6 +660,12 @@ export default function PollList() {
               minWidth: 100,
             }}
             domLayout="autoHeight"
+            pagination={true}
+            paginationPageSize={10}
+            paginationPageSizeSelector={[10, 25, 50, 100]}
+            paginationNumberFormatter={(params) => {
+              return '[' + params.value.toLocaleString() + ']';
+            }}
           />
         </div>
       );
