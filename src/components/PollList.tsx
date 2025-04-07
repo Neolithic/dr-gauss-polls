@@ -624,7 +624,7 @@ export default function PollList() {
     if (activeTab === 'leaderboard') {
       return (
         <div className="space-y-12">
-          <div className="ag-theme-alpine" style={{ height: '400px', width: '100%' }}>
+          <div className="ag-theme-alpine" style={{ width: '100%' }}>
             <h2 className="text-xl font-semibold mb-4">Total Earnings</h2>
             <AgGridReact
               rowData={summaryData}
@@ -632,7 +632,11 @@ export default function PollList() {
               defaultColDef={{
                 sortable: true,
                 filter: true,
+                resizable: true,
+                autoHeight: true,
+                minWidth: 100,
               }}
+              domLayout="autoHeight"
             />
           </div>
           <div style={{ height: '500px', width: '100%', padding: '2rem 0' }}>
@@ -643,7 +647,7 @@ export default function PollList() {
       );
     } else if (activeTab === 'details') {
       return (
-        <div className="ag-theme-alpine" style={{ height: '600px', width: '100%' }}>
+        <div className="ag-theme-alpine" style={{ width: '100%' }}>
           <h2 className="text-xl font-semibold mb-4">User Level Score Breakdown</h2>
           <AgGridReact
             rowData={sortedData}
@@ -651,7 +655,11 @@ export default function PollList() {
             defaultColDef={{
               sortable: true,
               filter: true,
+              resizable: true,
+              autoHeight: true,
+              minWidth: 100,
             }}
+            domLayout="autoHeight"
           />
         </div>
       );
