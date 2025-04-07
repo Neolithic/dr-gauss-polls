@@ -456,16 +456,44 @@ export default function PollList() {
 
     if (!leaderboardData) return null;
     
-    // Calculate user totals
-    const userTotals = leaderboardData.reduce((acc, row) => {
-      acc[row.user_name] = (acc[row.user_name] || 0) + row.amount;
+    // Get all unique poll types
+    const pollTypes = Array.from(new Set(leaderboardData.map(row => row.poll_type)));
+    
+    // Calculate user totals by poll type
+    const userTotalsByPollType: { [userName: string]: { [pollType: string]: number } } = {};
+    
+    // Initialize the structure
+    leaderboardData.forEach(row => {
+      if (!userTotalsByPollType[row.user_name]) {
+        userTotalsByPollType[row.user_name] = {};
+        pollTypes.forEach(pollType => {
+          userTotalsByPollType[row.user_name][pollType] = 0;
+        });
+      }
+    });
+    
+    // Calculate totals for each user by poll type
+    leaderboardData.forEach(row => {
+      userTotalsByPollType[row.user_name][row.poll_type] += row.amount;
+    });
+    
+    // Calculate total amount for each user
+    const userTotals = Object.entries(userTotalsByPollType).reduce((acc, [userName, pollTypeTotals]) => {
+      acc[userName] = Object.values(pollTypeTotals).reduce((sum, amount) => sum + amount, 0);
       return acc;
     }, {} as { [key: string]: number });
 
     // Convert to array and sort by total amount
-    const summaryData = Object.entries(userTotals)
-      .map(([user_name, amount]) => ({ user_name, amount }))
-      .sort((a, b) => b.amount - a.amount);
+    const summaryData = Object.entries(userTotalsByPollType)
+      .map(([user_name, pollTypeTotals]) => {
+        const totalAmount = Object.values(pollTypeTotals).reduce((sum, amount) => sum + amount, 0);
+        return {
+          user_name,
+          total: totalAmount,
+          ...pollTypeTotals
+        };
+      })
+      .sort((a, b) => b.total - a.total);
 
     // Calculate cumulative earnings by match for each user
     const matchIds = Array.from(new Set(leaderboardData.map(row => row.match_id)))
@@ -546,7 +574,7 @@ export default function PollList() {
     const summaryColumns: ColDef[] = [
       { field: 'user_name', headerName: 'User', flex: 1 },
       { 
-        field: 'amount', 
+        field: 'total', 
         headerName: 'Total Amount',
         flex: 1,
         cellStyle: (params: ValueFormatterParams) => ({
@@ -556,6 +584,19 @@ export default function PollList() {
         valueFormatter: (params: ValueFormatterParams) => params.value.toFixed(2)
       }
     ];
+    
+    // Add columns for each poll type
+    pollTypes.forEach(pollType => {
+      summaryColumns.push({
+        field: pollType,
+        headerName: pollType.charAt(0).toUpperCase() + pollType.slice(1).replace(/_/g, ' '),
+        flex: 1,
+        cellStyle: (params: ValueFormatterParams) => ({
+          color: params.value > 0 ? 'green' : params.value < 0 ? 'red' : 'black',
+        }),
+        valueFormatter: (params: ValueFormatterParams) => params.value.toFixed(2)
+      });
+    });
 
     const detailColumns: ColDef<LeaderboardRow>[] = [
       { field: 'user_name', headerName: 'User', flex: 1 },
