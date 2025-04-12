@@ -129,13 +129,28 @@ export async function getAllVotes() {
 
   const closeTimeMap = { ...closeTimeMap_regular, ...closeTimeMap_adhoc };
 
-  // Get all votes
-  const { data: votes, error } = await supabase
-    .from('VOTES')
-    .select('match_id, user_email, user_name, option_voted, poll_type, created_timestamp')
-    .order('created_timestamp', { ascending: false });
+  // Get all votes with pagination
+  let allVotes: Vote[] = [];
+  let hasMore = true;
+  let offset = 0;
+  const limit = 999;
 
-  if (error) throw error;
+  while (hasMore) {
+    const { data: votes, error } = await supabase
+      .from('VOTES')
+      .select('match_id, user_email, user_name, option_voted, poll_type, created_timestamp')
+      .order('created_timestamp', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    if (votes && votes.length > 0) {
+      allVotes = [...allVotes, ...votes];
+      offset += limit;
+    } else {
+      hasMore = false;
+    }
+  }
 
   // Process votes for each match and poll type
   const voteCounts: { [matchId: string]: { [pollType: string]: { [option: string]: number } } } = {};
@@ -146,7 +161,7 @@ export async function getAllVotes() {
   const latestVotes = new Map<string, Vote>();
 
   // First pass: find the latest valid vote for each user-match-polltype combination
-  votes.forEach((vote: Vote) => {
+  allVotes.forEach((vote: Vote) => {
     const matchCloseTime = closeTimeMap[vote.match_id + "-" + vote.poll_type];
     if (!matchCloseTime || vote.created_timestamp > matchCloseTime) return;
 
@@ -290,21 +305,37 @@ export async function getLeaderboardData() {
   await checkLoggedIn();
   const supabase = await getSupabaseClient();
 
-  const { data, error } = await supabase
-    .from('VOTING_RESULTS')
-    .select(`
-      amount,
-      match_id,
-      poll_type,
-      user_email,
-      users:USERS!VOTING_RESULTS_user_email_fkey(user_name)
-    `)
-    .order('match_id', { ascending: true });
+  let allData: any[] = [];
+  let hasMore = true;
+  let offset = 0;
+  const limit = 999;
 
-  if (error) throw error;
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('VOTING_RESULTS')
+      .select(`
+        amount,
+        match_id,
+        poll_type,
+        user_email,
+        users:USERS!VOTING_RESULTS_user_email_fkey(user_name)
+      `)
+      .eq('is_valid', true)
+      .order('match_id', { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      offset += limit;
+    } else {
+      hasMore = false;
+    }
+  }
 
   // Transform the data to flatten the structure
-  const results = data.map(record => {
+  const results = allData.map(record => {
     let uname = 'Unknown';
     if (record.users && typeof record.users === 'object' && 'user_name' in record.users)
       uname = record.users.user_name as string;
